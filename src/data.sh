@@ -1,0 +1,1 @@
+#This will be a bash script to retrieve GHG data and put the files into the data folder
