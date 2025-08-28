@@ -10,19 +10,18 @@
 import matplotlib.pyplot as plt 
 import pandas as pd
 import numpy as np
-import math 
 import os
-import model
+#import model
 
 
 DATA_PATH = os.path.abspath('data/')
-t0 = 1750
+t0 = 1913
 
 def read_ice_data(G: str):
     '''
     Read law2006.xls data  
     
-    This function returns a NumPy array of time and concentration
+    This function returns an array of time and concentration
     data for a specified gas(G)
     '''
     array = [[],[]]
@@ -35,13 +34,13 @@ def read_ice_data(G: str):
     elif f'{G.upper()} (ppb)' in ice_df:
         ice_ppb = ice_df[f'{G.upper()} (ppb)']
         array[1].extend(ice_ppb)
-    return np.array(array)
+    return array
 
 def read_mauna_loa():
     '''
     Read CO2 Mauna Loa dataset
 
-    This function reads the ML dataset and returns a NumPy array
+    This function reads the ML dataset and returns an array
     of time and concentration(ppm) for CO2
     '''
     array = [[],[]]
@@ -50,14 +49,14 @@ def read_mauna_loa():
     co2_ml_years = co2_ml_df['decimal']
     array[0].extend(co2_ml_years)  
     array[1].extend(co2_ml_ppm)
-    return np.array(array)
+    return array
 
 def read_global_data(G: str):
     '''
     Read global atmospheric concentration data
 
     This function reads global monthly mean datasets for either CH4 or N2O
-    and returns a NumPy array of time and concentration(ppb)
+    and returns an array of time and concentration(ppb)
     '''
     array = [[],[]]
     g_df = pd.read_csv(f'{DATA_PATH}/{G.lower()}_mm_gl.csv', comment='#',skiprows=45)
@@ -65,7 +64,15 @@ def read_global_data(G: str):
     g_ppb = g_df['average']
     array[0].extend(g_years)
     array[1].extend(g_ppb)
-    return np.array(array)
+    return array
+
+def float_to_datetime(decimal_year):
+    year = int(decimal_year)
+    fraction = year - decimal_year
+    year_start = pd.Timestamp(f"{year}-01-01")
+    year2_start = pd.Timestamp(f"{year+1}-01-01")
+    date = year_start + (year2_start-year_start)*fraction
+    pass #change later
 
 def combine_data(ice,present):
     '''
@@ -80,13 +87,61 @@ def combine_data(ice,present):
             pass
         elif ice[0][i] >= min(present[0]):
             pass
+        elif ice[0][i] in array[0]:
+            pass
         else:
             array[0].append(ice[0][i])
             array[1].append(ice[1][i])
     for i in range(len(present[0])):
         array[0].append(present[0][i])
         array[1].append(present[1][i])            
-    return np.array(array)
+    return array
+
+def create_dataframe(G: list):
+    data = {'date':[],'concentration':[]}
+    data['date'].extend(G[0])
+    data['concentration'].extend(G[1])
+    df = pd.DataFrame(data)
+    df.set_index('date', inplace=True)
+    return df
+
+def common_array(C,M,N):
+    array = []
+    for date in C[0]:
+        if date not in array:
+            array.append(date)
+    for date in M[0]:
+        if date not in array:
+            array.append(date)
+    for date in N[0]:
+        if date not in array:
+            array.append(date)
+    array.sort()
+    return array
+
+def nan_array(common_date,df):
+    nan = []
+    for i in common_date:
+        if i not in df.index.tolist():
+            nan.append(np.nan)
+        else:
+            nan.append(df.loc[i]['concentration'])    
+    return nan
+
+#resample data
+def resample_data(date,C,M,N):
+    new_data = {
+        'date': date,
+        'co2': C,
+        'ch4': M,
+        'n2o': N,
+        }
+    new_df = pd.DataFrame(new_data)
+    #new_df.set_index('common date', inplace=True)
+    new_df['co2'] = new_df['co2'].interpolate(method='linear',limit_direction='both')
+    new_df['ch4'] = new_df['ch4'].interpolate(method='linear',limit_direction='both')
+    new_df['n2o'] = new_df['n2o'].interpolate(method='linear',limit_direction='both')
+    return new_df
 
 
 def main() -> None:
@@ -103,6 +158,20 @@ def main() -> None:
     ch4 = combine_data(ch4_ice,ch4_g)
     n2o = combine_data(n2o_ice,n2o_g)
 
+    #Create dataframes
+    co2_df = create_dataframe(co2)
+    ch4_df = create_dataframe(ch4)
+    n2o_df = create_dataframe(n2o)
+
+    #Regrid dataframes
+    common_date = common_array(co2,ch4,n2o)
+    co2_nan = nan_array(common_date,co2_df)
+    ch4_nan = nan_array(common_date,ch4_df)
+    n2o_nan = nan_array(common_date,n2o_df)
+    ghg_df = resample_data(common_date,co2_nan,ch4_nan,n2o_nan)
+
+    print('yay!')
+        
 
 if __name__=='__main__':
     main()
